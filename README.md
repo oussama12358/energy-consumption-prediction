@@ -126,6 +126,12 @@ The project generates:
 
 ### Generated Visualizations
 
+> **Note:** The following image files were regenerated during the most recent script run and have been committed to Git:
+> `4_model_comparison_v2.png`, `5_predictions_vs_actual_v2.png`, and `7_feature_importance.png`.
+> These pertain to updated performance metrics and feature importance results.
+
+### Generated Visualizations
+
 #### 1. Energy Exploratory Analysis (`1_energy_exploratory_analysis.png`)
 - **Energy Consumption Over Time**: Line plot showing energy consumption trends (first 1000 records)
 - **Distribution of Energy Consumption**: Histogram showing the distribution pattern of energy usage
@@ -184,7 +190,7 @@ Compares three models:
 
 ## Author
 
-Your Name - 4th Year Engineering Student
+Oussama Sghir- 4th Year Engineering Student
 
 ## License
 
