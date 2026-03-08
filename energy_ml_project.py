@@ -21,7 +21,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold, TimeSeriesSplit, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
@@ -353,7 +353,7 @@ def evaluate_model(name, model, X_tr, X_te, y_tr, y_te, use_scaled=True):
 print("\n[STEP 8] Training Models")
 print("="*70)
 
-# --- MODEL 1: Linear Regression (baseline) ---
+# MODEL 1: Linear Regression (baseline)
 print("\n1. LINEAR REGRESSION (Baseline)")
 print("-" * 50)
 print("   Purpose: Establish a baseline. Expected low performance since")
@@ -361,7 +361,7 @@ print("   energy consumption has non-linear relationships.")
 evaluate_model('Linear Regression', LinearRegression(),
                X_train_scaled, X_test_scaled, y_train, y_test)
 
-# --- MODEL 2: Decision Tree ---
+# MODEL 2: Decision Tree
 print("\n2. DECISION TREE REGRESSOR")
 print("-" * 50)
 evaluate_model('Decision Tree',
@@ -369,7 +369,7 @@ evaluate_model('Decision Tree',
                                      min_samples_leaf=10, random_state=42),
                X_train_scaled, X_test_scaled, y_train, y_test)
 
-# --- MODEL 3: Random Forest ---
+# MODEL 3: Random Forest 
 print("\n3. RANDOM FOREST REGRESSOR")
 print("-" * 50)
 evaluate_model('Random Forest',
@@ -378,9 +378,8 @@ evaluate_model('Random Forest',
                                      random_state=42, n_jobs=-1),
                X_train_scaled, X_test_scaled, y_train, y_test)
 
-# ============================================================
-# NEW v2.0 - MODEL 4: XGBoost + Optuna optimization
-# ============================================================
+# MODEL 4: XGBoost + Optuna optimization
+
 if XGBOOST_AVAILABLE:
     print("\n4. XGBOOST + OPTUNA OPTIMIZATION (NEW)")
     print("-" * 50)
@@ -421,9 +420,8 @@ if XGBOOST_AVAILABLE:
 
     evaluate_model('XGBoost', xgb_model, X_train, X_test, y_train, y_test, use_scaled=False)
 
-# ============================================================
-# NEW v2.0 - MODEL 5: LightGBM + Optuna
-# ============================================================
+# MODEL 5: LightGBM + Optuna
+
 if LIGHTGBM_AVAILABLE:
     print("\n5. LIGHTGBM + OPTUNA OPTIMIZATION (NEW)")
     print("-" * 50)
@@ -462,9 +460,8 @@ if LIGHTGBM_AVAILABLE:
 
     evaluate_model('LightGBM', lgb_model, X_train, X_test, y_train, y_test, use_scaled=False)
 
-# ================================================================
 # 10. COMPARISON & VISUALIZATION
-# ================================================================
+
 print("\n[STEP 9] Model Comparison")
 print("="*70)
 
@@ -483,7 +480,7 @@ print(comparison_df.to_string(index=False))
 best_model_name = comparison_df.loc[comparison_df['RMSE (MW)'].idxmin(), 'Model']
 print(f"\n BEST MODEL: {best_model_name}")
 
-# --- Plot comparison ---
+# Plot comparison
 num_models = len(results)
 colors = plt.cm.Set2(np.linspace(0, 1, num_models))
 
@@ -505,7 +502,7 @@ axes[2].set_title('R² Score (Higher is Better)'); axes[2].set_ylim([0, 1])
 axes[2].tick_params(axis='x', rotation=20)
 for i, v in enumerate(comparison_df['R² Score']): axes[2].text(i, v+0.01, f'{v:.3f}', ha='center', fontsize=8)
 
-# NEW v2.0 - Train vs Test R² (overfitting visualization)
+# Train vs Test R² (overfitting visualization)
 x = np.arange(num_models)
 axes[3].bar(x - 0.2, comparison_df['Train R²'], 0.4, label='Train R²', color='steelblue', edgecolor='black')
 axes[3].bar(x + 0.2, comparison_df['R² Score'], 0.4, label='Test R²',  color='tomato',    edgecolor='black')
@@ -518,7 +515,7 @@ plt.savefig('4_model_comparison_v2.png', dpi=150, bbox_inches='tight')
 print("\n✓ Saved: 4_model_comparison_v2.png")
 plt.show()
 
-# --- Predictions vs Actual ---
+# Predictions vs Actual
 fig, axes = plt.subplots(1, len(results), figsize=(6*len(results), 5))
 if len(results) == 1: axes = [axes]
 fig.suptitle('Predictions vs Actual Values', fontsize=14, fontweight='bold')
@@ -537,9 +534,8 @@ plt.savefig('5_predictions_vs_actual_v2.png', dpi=150, bbox_inches='tight')
 print("✓ Saved: 5_predictions_vs_actual_v2.png")
 plt.show()
 
-# ================================================================
 # 11. FEATURE IMPORTANCE (XGBoost or LightGBM)
-# ================================================================
+
 best_tree_model = None
 if 'LightGBM' in models:
     best_tree_model = ('LightGBM', models['LightGBM'])
@@ -563,27 +559,261 @@ if best_tree_model:
     print("✓ Saved: 7_feature_importance.png")
     plt.show()
 
-# ================================================================
-# 12. FINAL SUMMARY
-# ================================================================
-print("\n" + "="*70)
-print("                  FINAL SUMMARY - v2.0")
-print("="*70)
-print("\n IMPROVEMENTS ADDED (from expert feedback):")
-print("   ✓ Cyclic features (sin/cos) for Hour, Month, DayOfWeek, DayOfYear")
-print("   ✓ XGBoost model (handles non-linearity, threshold effects, seasonality)")
-print("   ✓ LightGBM model (faster, great for large datasets)")
-print("   ✓ Optuna hyperparameter optimization (Bayesian search)")
-print("   ✓ Train/Test gap analysis (overfitting detection)")
-print("   ✓ Temporal split instead of random shuffle (time series integrity)")
-print("   ✓ Feature importance visualization")
+# 12. K-FOLD CROSS VALIDATION - ROBUSTNESS TESTING
 
-print("\n RESULTS:")
+print("\n" + "="*70)
+print("   K-FOLD CROSS VALIDATION - ROBUSTNESS TESTING")
+print("="*70)
+
+K_FOLDS     = 5   # number of folds
+N_SPLITS_TS = 5   # splits for TimeSeriesSplit
+
+kf  = KFold(n_splits=K_FOLDS, shuffle=False)   # no shuffle to keep time order
+tss = TimeSeriesSplit(n_splits=N_SPLITS_TS)
+
+# Models to cross-validate (use best hyperparams found earlier)
+cv_models = {
+    'Linear Regression': LinearRegression(),
+    'Decision Tree':     DecisionTreeRegressor(max_depth=15, min_samples_split=20,
+                                               min_samples_leaf=10, random_state=42),
+    'Random Forest':     RandomForestRegressor(n_estimators=100, max_depth=15,
+                                               min_samples_split=20, min_samples_leaf=10,
+                                               random_state=42, n_jobs=-1),
+}
+
+if XGBOOST_AVAILABLE and 'XGBoost' in models:
+    cv_models['XGBoost'] = models['XGBoost']
+
+if LIGHTGBM_AVAILABLE and 'LightGBM' in models:
+    cv_models['LightGBM'] = models['LightGBM']
+
+# Prepare full arrays (use all data for CV)
+X_cv = df[features].values
+y_cv = df['EnergyConsumption'].values
+
+scaler_cv = StandardScaler()
+
+kfold_results  = {}
+tss_results    = {}
+
+def run_cv(model_name, model, X, y, cv_strategy, results_dict, use_scaler=True):
+    """Run cross-validation and store per-fold metrics."""
+    fold_rmse, fold_mae, fold_r2 = [], [], []
+
+    for fold_idx, (train_idx, val_idx) in enumerate(cv_strategy.split(X), 1):
+        X_tr, X_val = X[train_idx], X[val_idx]
+        y_tr, y_val = y[train_idx], y[val_idx]
+
+        if use_scaler:
+            sc = StandardScaler()
+            X_tr  = sc.fit_transform(X_tr)
+            X_val = sc.transform(X_val)
+
+        model.fit(X_tr, y_tr)
+        preds = model.predict(X_val)
+
+        fold_rmse.append(np.sqrt(mean_squared_error(y_val, preds)))
+        fold_mae.append(mean_absolute_error(y_val, preds))
+        fold_r2.append(r2_score(y_val, preds))
+
+    results_dict[model_name] = {
+        'RMSE_folds': fold_rmse,
+        'MAE_folds':  fold_mae,
+        'R2_folds':   fold_r2,
+        'RMSE_mean':  np.mean(fold_rmse),
+        'RMSE_std':   np.std(fold_rmse),
+        'MAE_mean':   np.mean(fold_mae),
+        'MAE_std':    np.std(fold_mae),
+        'R2_mean':    np.mean(fold_r2),
+        'R2_std':     np.std(fold_r2),
+    }
+
+#  Run both strategies for each model
+print(f"\n{'─'*70}")
+print(f"  Running {K_FOLDS}-Fold KFold  +  {N_SPLITS_TS}-Split TimeSeriesSplit")
+print(f"  Models: {list(cv_models.keys())}")
+print(f"{'─'*70}")
+
+for name, mdl in cv_models.items():
+    use_sc = name in ('Linear Regression',)   # only LR needs scaling strictly
+    print(f"\n  ⏳ {name} ...")
+    run_cv(name, mdl, X_cv, y_cv, kf,  kfold_results,  use_scaler=use_sc)
+    run_cv(name, mdl, X_cv, y_cv, tss, tss_results,    use_scaler=use_sc)
+
+# Print summary tables
+print("\n\n" + "─"*70)
+print("   STANDARD K-FOLD RESULTS  (K=5, no shuffle)")
+print("─"*70)
+kf_rows = []
+for name, r in kfold_results.items():
+    kf_rows.append({
+        'Model': name,
+        'RMSE mean ± std': f"{r['RMSE_mean']:.1f} ± {r['RMSE_std']:.1f}",
+        'MAE  mean ± std': f"{r['MAE_mean']:.1f}  ± {r['MAE_std']:.1f}",
+        'R²   mean ± std': f"{r['R2_mean']:.4f} ± {r['R2_std']:.4f}",
+    })
+print(pd.DataFrame(kf_rows).to_string(index=False))
+
+print("\n" + "─"*70)
+print("   TIME SERIES SPLIT RESULTS  (n_splits=5)  ← more realistic")
+print("─"*70)
+ts_rows = []
+for name, r in tss_results.items():
+    ts_rows.append({
+        'Model': name,
+        'RMSE mean ± std': f"{r['RMSE_mean']:.1f} ± {r['RMSE_std']:.1f}",
+        'MAE  mean ± std': f"{r['MAE_mean']:.1f}  ± {r['MAE_std']:.1f}",
+        'R²   mean ± std': f"{r['R2_mean']:.4f} ± {r['R2_std']:.4f}",
+    })
+print(pd.DataFrame(ts_rows).to_string(index=False))
+
+print("\n  💡 Low std = stable model | High std = unstable / sensitive to data splits")
+
+# VISUALISATION 1 : R² per fold (line chart)
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig.suptitle('K-Fold Cross Validation — R² per Fold', fontsize=15, fontweight='bold')
+
+for ax, (res_dict, title) in zip(axes, [
+    (kfold_results,  f'Standard KFold (K={K_FOLDS})'),
+    (tss_results,    f'TimeSeriesSplit (n={N_SPLITS_TS}) ← Recommended for time series'),
+]):
+    for name, r in res_dict.items():
+        folds = range(1, len(r['R2_folds']) + 1)
+        ax.plot(folds, r['R2_folds'], marker='o', linewidth=2, label=name)
+    ax.axhline(y=0, color='black', linestyle='--', linewidth=0.8, alpha=0.5)
+    ax.set_title(title, fontsize=12)
+    ax.set_xlabel('Fold'); ax.set_ylabel('R² Score')
+    ax.set_ylim([-0.1, 1.05])
+    ax.legend(fontsize=9); ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('8_kfold_r2_per_fold.png', dpi=150, bbox_inches='tight')
+print("\n✓ Saved: 8_kfold_r2_per_fold.png")
+plt.show()
+
+# VISUALISATION 2 : Mean R² with error bars
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig.suptitle('K-Fold — Mean R² ± Std Dev (robustness indicator)', fontsize=14, fontweight='bold')
+
+for ax, (res_dict, title) in zip(axes, [
+    (kfold_results, f'Standard KFold (K={K_FOLDS})'),
+    (tss_results,   f'TimeSeriesSplit (n={N_SPLITS_TS})'),
+]):
+    names  = list(res_dict.keys())
+    means  = [res_dict[n]['R2_mean'] for n in names]
+    stds   = [res_dict[n]['R2_std']  for n in names]
+    colors_bar = plt.cm.Set2(np.linspace(0, 1, len(names)))
+
+    bars = ax.bar(names, means, color=colors_bar, edgecolor='black',
+                  yerr=stds, capsize=7, error_kw={'linewidth': 2})
+    ax.set_title(title, fontsize=11)
+    ax.set_ylabel('Mean R²'); ax.set_ylim([0, 1.1])
+    ax.tick_params(axis='x', rotation=15)
+    ax.grid(True, alpha=0.3, axis='y')
+    for bar, mean, std in zip(bars, means, stds):
+        ax.text(bar.get_x() + bar.get_width()/2, mean + std + 0.03,
+                f'{mean:.3f}\n±{std:.3f}', ha='center', fontsize=8, fontweight='bold')
+
+plt.tight_layout()
+plt.savefig('9_kfold_mean_r2_errorbars.png', dpi=150, bbox_inches='tight')
+print("✓ Saved: 9_kfold_mean_r2_errorbars.png")
+plt.show()
+
+# VISUALISATION 3 : RMSE distribution (boxplot per model) 
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig.suptitle('K-Fold — RMSE Distribution per Model', fontsize=14, fontweight='bold')
+
+for ax, (res_dict, title) in zip(axes, [
+    (kfold_results, f'Standard KFold (K={K_FOLDS})'),
+    (tss_results,   f'TimeSeriesSplit (n={N_SPLITS_TS})'),
+]):
+    data_bp = [res_dict[n]['RMSE_folds'] for n in res_dict]
+    bp = ax.boxplot(data_bp, labels=list(res_dict.keys()), patch_artist=True,
+                    medianprops={'color': 'red', 'linewidth': 2})
+    colors_bp = plt.cm.Set2(np.linspace(0, 1, len(res_dict)))
+    for patch, color in zip(bp['boxes'], colors_bp):
+        patch.set_facecolor(color)
+    ax.set_title(title, fontsize=11)
+    ax.set_ylabel('RMSE (MW)'); ax.tick_params(axis='x', rotation=15)
+    ax.grid(True, alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.savefig('10_kfold_rmse_boxplot.png', dpi=150, bbox_inches='tight')
+print("✓ Saved: 10_kfold_rmse_boxplot.png")
+plt.show()
+
+# VISUALISATION 4 : KFold vs TimeSeriesSplit side by side
+fig, ax = plt.subplots(figsize=(14, 6))
+fig.suptitle('KFold vs TimeSeriesSplit — Mean R² Comparison', fontsize=14, fontweight='bold')
+
+names_all = list(cv_models.keys())
+x = np.arange(len(names_all))
+w = 0.35
+
+kf_means = [kfold_results[n]['R2_mean'] for n in names_all]
+ts_means = [tss_results[n]['R2_mean']   for n in names_all]
+kf_stds  = [kfold_results[n]['R2_std']  for n in names_all]
+ts_stds  = [tss_results[n]['R2_std']    for n in names_all]
+
+ax.bar(x - w/2, kf_means, w, label='KFold',           color='steelblue',
+       edgecolor='black', yerr=kf_stds, capsize=5)
+ax.bar(x + w/2, ts_means, w, label='TimeSeriesSplit ✓', color='tomato',
+       edgecolor='black', yerr=ts_stds, capsize=5)
+ax.set_xticks(x); ax.set_xticklabels(names_all, rotation=15)
+ax.set_ylabel('Mean R²'); ax.set_ylim([0, 1.15])
+ax.legend(fontsize=11); ax.grid(True, alpha=0.3, axis='y')
+
+for i, (km, tm, ks, ts) in enumerate(zip(kf_means, ts_means, kf_stds, ts_stds)):
+    ax.text(i - w/2, km + ks + 0.03, f'{km:.3f}', ha='center', fontsize=8)
+    ax.text(i + w/2, tm + ts + 0.03, f'{tm:.3f}', ha='center', fontsize=8)
+
+plt.tight_layout()
+plt.savefig('11_kfold_vs_tss_comparison.png', dpi=150, bbox_inches='tight')
+print("✓ Saved: 11_kfold_vs_tss_comparison.png")
+plt.show()
+
+# 13. FINAL SUMMARY
+
+print("\n" + "="*70)
+print("                  FINAL SUMMARY - v3.0")
+print("="*70)
+print("\n ALL IMPROVEMENTS:")
+print("   ✓ Cyclic features (sin/cos) for Hour, Month, DayOfWeek, DayOfYear")
+print("   ✓ XGBoost + LightGBM (non-linear, threshold effects, seasonality)")
+print("   ✓ Optuna hyperparameter optimization (Bayesian search, 30 trials)")
+print("   ✓ Train/Test gap analysis (overfitting detection)")
+print("   ✓ Temporal split (no shuffle — time series integrity)")
+print("   ✓ Feature importance visualization")
+print("   ✓ K-Fold cross validation (K=5)    ← robustness test")
+print("   ✓ TimeSeriesSplit validation (n=5) ← realistic, no leakage")
+
+print("\n SINGLE SPLIT RESULTS:")
 print(comparison_df[['Model', 'RMSE (MW)', 'R² Score', 'Gap']].to_string(index=False))
 
-print(f"\n Best model: {best_model_name}")
-print("\n NEXT STEPS (Kaggle competitions to explore):")
-print("   - House Prices: Advanced Regression Techniques")
+print("\n CROSS-VALIDATION SUMMARY (TimeSeriesSplit — most reliable):")
+cv_summary_rows = []
+for name in tss_results:
+    r = tss_results[name]
+    cv_summary_rows.append({
+        'Model':        name,
+        'CV R² mean':   f"{r['R2_mean']:.4f}",
+        'CV R² std':    f"± {r['R2_std']:.4f}",
+        'CV RMSE mean': f"{r['RMSE_mean']:.1f} MW",
+    })
+print(pd.DataFrame(cv_summary_rows).to_string(index=False))
+
+print("\n HOW TO INTERPRET:")
+print("   • High R² mean + Low std  → robust and reliable model ✓")
+print("   • High R² mean + High std → good on average but unstable ⚠")
+print("   • Low R² mean             → model doesn't generalize well ✗")
+print("   • KFold R² >> TimeSeriesSplit R² → likely data leakage in KFold ⚠")
+
+best_cv_model = max(tss_results, key=lambda n: tss_results[n]['R2_mean'])
+print(f"\n🏆 Most robust model (TimeSeriesSplit): {best_cv_model}")
+print(f"   R² = {tss_results[best_cv_model]['R2_mean']:.4f} ± {tss_results[best_cv_model]['R2_std']:.4f}")
+
+print("\n💡 NEXT STEPS (Kaggle competitions):")
 print("   - Store Sales - Time Series Forecasting")
 print("   - M5 Forecasting - Accuracy")
+print("   - House Prices: Advanced Regression Techniques")
 print("\n" + "="*70)
